@@ -1,0 +1,19 @@
+name: Tag and Release
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    uses: caesariodito/.standardization/.github/workflows/reusable-tag-and-release.yml@v1
+    with:
+      main_branch: main
+      tag_prefix: v
+      changelog_file: CHANGELOG.md
+      update_changelog: true
+      create_release: true
+    secrets: inherit

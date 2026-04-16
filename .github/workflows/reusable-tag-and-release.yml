@@ -1,0 +1,189 @@
+name: Reusable Tag and Release
+
+on:
+  workflow_call:
+    inputs:
+      main_branch:
+        description: "Release source branch"
+        required: false
+        default: "main"
+        type: string
+      tag_prefix:
+        description: "Prefix for release tags"
+        required: false
+        default: "v"
+        type: string
+      changelog_file:
+        description: "Path to changelog file"
+        required: false
+        default: "CHANGELOG.md"
+        type: string
+      update_changelog:
+        description: "Generate and commit changelog entry"
+        required: false
+        default: true
+        type: boolean
+      create_release:
+        description: "Create/update GitHub release"
+        required: false
+        default: true
+        type: boolean
+      git_user_name:
+        description: "Git user.name for changelog commit"
+        required: false
+        default: "github-actions[bot]"
+        type: string
+      git_user_email:
+        description: "Git user.email for changelog commit"
+        required: false
+        default: "41898282+github-actions[bot]@users.noreply.github.com"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  tag-release:
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == inputs.main_branch) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && startsWith(github.ref_name, inputs.tag_prefix) && github.actor != 'github-actions[bot]') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref }}
+
+      - name: Resolve workflow source repository and ref
+        id: wfmeta
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKFLOW_REF="${{ github.workflow_ref }}"
+          WORKFLOW_REPO="${WORKFLOW_REF%%/.github/workflows/*}"
+          WORKFLOW_GIT_REF="${WORKFLOW_REF#*@}"
+          echo "repo=${WORKFLOW_REPO}" >> "$GITHUB_OUTPUT"
+          echo "ref=${WORKFLOW_GIT_REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout workflow source scripts
+        if: ${{ inputs.update_changelog || inputs.create_release }}
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.wfmeta.outputs.repo }}
+          ref: ${{ steps.wfmeta.outputs.ref }}
+          path: .workflow-source
+          fetch-depth: 1
+
+      - name: Configure git identity
+        run: |
+          git config user.name "${{ inputs.git_user_name }}"
+          git config user.email "${{ inputs.git_user_email }}"
+
+      - name: Resolve next version tag
+        id: version
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+        run: |
+          set -euo pipefail
+
+          PREVIOUS_TAG=""
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            NEW_TAG="${GITHUB_REF_NAME}"
+            PREVIOUS_TAG=$(git tag --list "${TAG_PREFIX}[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | grep -Fxv "${NEW_TAG}" | head -n1 || true)
+          else
+            LATEST_STABLE=$(git tag --list "${TAG_PREFIX}[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n1 || true)
+            if [ -z "$LATEST_STABLE" ]; then
+              BASE_NUM="0.0.0"
+            else
+              PREVIOUS_TAG="$LATEST_STABLE"
+              BASE_NUM=${LATEST_STABLE#${TAG_PREFIX}}
+            fi
+
+            IFS='.' read -r MAJ MIN PAT <<<"$BASE_NUM"
+
+            MERGE_MESSAGE=$(git show -s --format=%B "$MERGE_SHA" | tr '[:upper:]' '[:lower:]')
+            TITLE_LC=$(echo "$PR_TITLE" | tr '[:upper:]' '[:lower:]')
+
+            BUMP_KIND="patch"
+            if echo "$MERGE_MESSAGE" | grep -qE 'breaking change|^.*!:' || echo "$TITLE_LC" | grep -qE '^.*!:'; then
+              BUMP_KIND="major"
+            elif echo "$TITLE_LC" | grep -qE '^feat(\([^)]+\))?!?:'; then
+              BUMP_KIND="minor"
+            fi
+
+            case "$BUMP_KIND" in
+              major) MAJ=$((MAJ+1)); MIN=0; PAT=0 ;;
+              minor) MIN=$((MIN+1)); PAT=0 ;;
+              *) PAT=$((PAT+1)) ;;
+            esac
+
+            NEW_TAG="${TAG_PREFIX}${MAJ}.${MIN}.${PAT}"
+          fi
+
+          echo "previous_tag=${PREVIOUS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "new_tag=${NEW_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists."
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Generate changelog and release notes from tags
+        if: ${{ inputs.update_changelog || inputs.create_release }}
+        shell: bash
+        env:
+          CURRENT_TAG: ${{ steps.version.outputs.new_tag }}
+          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          bash .workflow-source/.github/scripts/update_changelog_from_tags.sh "$CURRENT_TAG" "$PREVIOUS_TAG" "${{ inputs.changelog_file }}" .release-notes.md
+
+      - name: Commit and push changelog
+        if: ${{ inputs.update_changelog && github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- "${{ inputs.changelog_file }}"; then
+            echo "No changelog update to commit."
+            exit 0
+          fi
+
+          git add "${{ inputs.changelog_file }}"
+          git commit -m "docs: update changelog for ${{ steps.version.outputs.new_tag }}"
+          git push origin HEAD:${{ github.event.pull_request.base.ref }}
+
+      - name: Create or update GitHub release
+        if: ${{ inputs.create_release }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ -f .release-notes.md ]; then
+              gh release edit "$TAG" -F .release-notes.md
+            else
+              gh release edit "$TAG"
+            fi
+          else
+            if [ -f .release-notes.md ]; then
+              gh release create "$TAG" -F .release-notes.md --title "$TAG"
+            else
+              gh release create "$TAG" --title "$TAG"
+            fi
+          fi

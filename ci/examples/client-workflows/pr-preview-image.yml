@@ -1,0 +1,15 @@
+name: PR Preview Image
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  preview:
+    uses: caesariodito/.standardization/.github/workflows/reusable-pr-preview-image.yml@v1
+    with:
+      image_name: api-surveyor
+      dockerfile: ./Dockerfile
+      context: .
+      comment_on_pr: true
+    secrets: inherit

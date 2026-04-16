@@ -1,0 +1,56 @@
+name: Reusable CI PR (.NET)
+
+on:
+  workflow_call:
+    inputs:
+      solution_path:
+        description: "Path to .sln or project file"
+        required: true
+        type: string
+      dotnet_version:
+        description: "Version passed to setup-dotnet"
+        required: false
+        default: "8.0.x"
+        type: string
+      configuration:
+        description: "dotnet build/test configuration"
+        required: false
+        default: "Release"
+        type: string
+      run_tests:
+        description: "Run dotnet test step"
+        required: false
+        default: true
+        type: boolean
+      skip_draft_pr:
+        description: "Skip execution for draft pull requests"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    if: ${{ inputs.skip_draft_pr != true || github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Restore
+        run: dotnet restore "${{ inputs.solution_path }}"
+
+      - name: Build
+        run: dotnet build "${{ inputs.solution_path }}" --configuration "${{ inputs.configuration }}" --no-restore
+
+      - name: Test
+        if: ${{ inputs.run_tests }}
+        run: dotnet test "${{ inputs.solution_path }}" --configuration "${{ inputs.configuration }}" --no-build

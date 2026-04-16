@@ -1,0 +1,23 @@
+name: Docker Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version/tag (example: v1.2.3)"
+        required: false
+        default: ""
+
+jobs:
+  publish:
+    uses: caesariodito/.standardization/.github/workflows/reusable-docker-publish.yml@v1
+    with:
+      image_name: api-surveyor
+      dockerfile: ./Dockerfile
+      context: .
+      version: ${{ github.event.inputs.version || '' }}
+      publish_latest_on_stable: true
+    secrets: inherit

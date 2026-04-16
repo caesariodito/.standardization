@@ -1,0 +1,10 @@
+name: Semantic PR Title
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  semantic:
+    uses: caesariodito/.standardization/.github/workflows/reusable-semantic-pr.yml@v1
+    secrets: inherit
