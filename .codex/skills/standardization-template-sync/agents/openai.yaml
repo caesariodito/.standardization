@@ -1,0 +1,4 @@
+interface:
+  display_name: "Standardization Template Sync"
+  short_description: "Apply Codex/RTK standardization template safely"
+  default_prompt: "Apply the standardization template into a target repository with a dry-run first, then execute and report copied, merged, and skipped files."
