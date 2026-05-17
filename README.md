@@ -53,6 +53,7 @@ Current reusable workflow entrypoints:
 
 ```text
 .github/workflows/reusable-ci-pr-dotnet.yml
+.github/workflows/reusable-ci-pr-go.yml
 .github/workflows/reusable-docker-publish.yml
 .github/workflows/reusable-pr-preview-image.yml
 .github/workflows/reusable-semantic-pr.yml
@@ -63,6 +64,7 @@ Docs:
 
 ```text
 ci/README.md
+ci/client-repository-guide.md
 ```
 
 Client repositories should keep thin wrapper workflows and call this repository's reusable workflows by tag, for example:
@@ -72,6 +74,8 @@ caesariodito/.standardization/.github/workflows/<workflow-file>@v1
 ```
 
 Use `@v1` for stable major version updates. Pin to commit SHA when strict supply-chain control is needed.
+
+Go workflows support optional private modules through `private_modules_pattern` and `GH_PRIVATE_MODULES_TOKEN`. Consuming repositories provide the secret; this repository only defines the reusable workflow interface.
 
 ## Language/project standards
 

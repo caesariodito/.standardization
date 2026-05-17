@@ -27,6 +27,9 @@ on:
         required: false
         default: ""
         type: string
+    secrets:
+      GH_PRIVATE_MODULES_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -50,6 +53,8 @@ jobs:
 
       - name: Resolve preview tags
         id: meta
+        env:
+          GH_PRIVATE_MODULES_TOKEN: ${{ secrets.GH_PRIVATE_MODULES_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -68,6 +73,9 @@ jobs:
             echo "preview_version=${PREVIEW_VERSION}"
             echo "build_args<<EOF"
             echo "APP_VERSION=${PREVIEW_VERSION}"
+            if [ -n "$GH_PRIVATE_MODULES_TOKEN" ]; then
+              echo "GH_PRIVATE_MODULES_TOKEN=${GH_PRIVATE_MODULES_TOKEN}"
+            fi
             if [ -n "${{ inputs.extra_build_args }}" ]; then
               echo "${{ inputs.extra_build_args }}"
             fi

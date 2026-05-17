@@ -1,0 +1,23 @@
+name: CI PR (Go)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: caesariodito/.standardization/.github/workflows/reusable-ci-pr-go.yml@v1
+    with:
+      go_version_file: go.mod
+      private_modules_pattern: github.com/deccara-tech/*
+      fmt_directories: cmd internal test
+      run_architecture_check: true
+      architecture_check_command: bash ./scripts/check_architecture.sh
+      run_template_hygiene_check: true
+      template_hygiene_check_command: bash ./scripts/check_template_hygiene.sh
+      go_test_command: go test ./...
+      go_build_command: go build ./cmd/bot-server ./cmd/worker
+    secrets: inherit

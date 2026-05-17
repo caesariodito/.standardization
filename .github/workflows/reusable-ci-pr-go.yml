@@ -1,0 +1,130 @@
+name: Reusable CI PR (Go)
+
+on:
+  workflow_call:
+    inputs:
+      go_version_file:
+        description: "Path to go.mod file"
+        required: false
+        default: "go.mod"
+        type: string
+      private_modules_pattern:
+        description: "Pattern for GOPRIVATE and GONOSUMDB (example: github.com/deccara-tech/*)"
+        required: false
+        default: ""
+        type: string
+      fmt_directories:
+        description: "Space-separated directories scanned by gofmt -l"
+        required: false
+        default: "cmd internal test"
+        type: string
+      run_architecture_check:
+        description: "Run architecture boundary command"
+        required: false
+        default: false
+        type: boolean
+      architecture_check_command:
+        description: "Architecture boundary command"
+        required: false
+        default: "bash ./scripts/check_architecture.sh"
+        type: string
+      run_template_hygiene_check:
+        description: "Run template hygiene command"
+        required: false
+        default: false
+        type: boolean
+      template_hygiene_check_command:
+        description: "Template hygiene command"
+        required: false
+        default: "bash ./scripts/check_template_hygiene.sh"
+        type: string
+      go_test_command:
+        description: "Go test command"
+        required: false
+        default: "go test ./..."
+        type: string
+      go_build_command:
+        description: "Go build command"
+        required: false
+        default: "go build ./..."
+        type: string
+      skip_draft_pr:
+        description: "Skip execution for draft pull requests"
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      GH_PRIVATE_MODULES_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    if: ${{ inputs.skip_draft_pr != true || github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.go_version_file }}
+          cache: true
+
+      - name: Configure private Go modules
+        if: ${{ inputs.private_modules_pattern != '' }}
+        env:
+          GH_PRIVATE_MODULES_TOKEN: ${{ secrets.GH_PRIVATE_MODULES_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "GOPRIVATE=${{ inputs.private_modules_pattern }}" >> "$GITHUB_ENV"
+          echo "GONOSUMDB=${{ inputs.private_modules_pattern }}" >> "$GITHUB_ENV"
+          if [ -n "$GH_PRIVATE_MODULES_TOKEN" ]; then
+            git config --global url."https://x-access-token:${GH_PRIVATE_MODULES_TOKEN}@github.com/".insteadOf "https://github.com/"
+          else
+            echo "GH_PRIVATE_MODULES_TOKEN is not set. Continuing with anonymous module access."
+          fi
+
+      - name: Download dependencies
+        shell: bash
+        run: go mod download
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          files="$(find ${{ inputs.fmt_directories }} -type f -name '*.go' 2>/dev/null || true)"
+          if [ -z "$files" ]; then
+            echo "No Go files found in configured directories: ${{ inputs.fmt_directories }}"
+            exit 0
+          fi
+
+          unformatted="$(gofmt -l $files)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Architecture boundaries
+        if: ${{ inputs.run_architecture_check }}
+        shell: bash
+        run: ${{ inputs.architecture_check_command }}
+
+      - name: Template hygiene
+        if: ${{ inputs.run_template_hygiene_check }}
+        shell: bash
+        run: ${{ inputs.template_hygiene_check_command }}
+
+      - name: Test
+        shell: bash
+        run: ${{ inputs.go_test_command }}
+
+      - name: Build
+        shell: bash
+        run: ${{ inputs.go_build_command }}

@@ -32,6 +32,9 @@ on:
         required: false
         default: ""
         type: string
+    secrets:
+      GH_PRIVATE_MODULES_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -47,6 +50,8 @@ jobs:
 
       - name: Resolve image metadata
         id: vars
+        env:
+          GH_PRIVATE_MODULES_TOKEN: ${{ secrets.GH_PRIVATE_MODULES_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -75,6 +80,9 @@ jobs:
             echo "tags=${TAGS}"
             echo "build_args<<EOF"
             echo "APP_VERSION=${VERSION}"
+            if [ -n "$GH_PRIVATE_MODULES_TOKEN" ]; then
+              echo "GH_PRIVATE_MODULES_TOKEN=${GH_PRIVATE_MODULES_TOKEN}"
+            fi
             if [ -n "${{ inputs.extra_build_args }}" ]; then
               echo "${{ inputs.extra_build_args }}"
             fi
