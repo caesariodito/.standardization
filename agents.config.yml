@@ -1,0 +1,35 @@
+schema: v1
+
+# This repo is the source of the v2 standard, so its standard_version
+# tracks itself. Bumped at release time.
+standard_version: v2.0.0
+
+repo:
+  name: standardization
+  kind: docs
+  language: mixed
+  owners:
+    code: ["@caesariodito"]
+    product: ["@caesariodito"]
+
+# This repo isn't an API.
+api:
+  is_api: false
+
+# This repo doesn't run as a service. No observability config.
+
+# This repo doesn't deploy.
+ci:
+  deploy_envs: []
+
+standard:
+  auto_update: false   # the source repo doesn't receive sync-bot PRs
+  auto_merge: none
+
+# kind: docs already disables most service rules (healthz, observability,
+# api-contract, bruno, deploy). The opt-outs below cover the few rules
+# that fire on docs repos but don't apply here.
+optouts:
+  - rule: ci.workflow-release
+    reason: "release workflow is the bot itself; covered by sync-standard.yml"
+    expires: 2027-05-25
