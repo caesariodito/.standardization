@@ -1,149 +1,163 @@
 # .standardization
 
-Central standardization repository for reusable engineering conventions, CI workflows, coding-agent prompts, and project templates.
+Central standardization repository for reusable engineering conventions, CI
+workflows, coding-agent prompts, language standards, and the v2 AGENTS.md
+template that consuming repos vendor.
 
-Use this repo as source-of-truth material when scaffolding, reviewing, or standardizing projects across local repositories.
+Use this repo as the source of truth when scaffolding, reviewing, or
+standardizing projects across local repositories.
 
 ## What this repository contains
 
 ```text
 .standardization/
-├── AGENTS.md                 # Agent entrypoint; currently references RTK.md
-├── RTK.md                    # Rust Token Killer shell-command guidance
-├── .codex/                   # Codex CLI configuration, hooks, and skills
+├── AGENTS.md                          # rules for working ON this repo
+├── agents.config.yml                  # this repo's own config (kind: docs)
+├── README.md                          # you are here
 ├── .github/
-│   ├── scripts/              # Release/changelog helper scripts
-│   └── workflows/            # Reusable GitHub Actions workflows
-├── ci/                       # CI usage docs and client workflow examples
-├── dotnet/                   # .NET project standardization docs
-├── golang/                   # Go project standardization docs
-├── prompts/                  # Reusable agent prompts
-│   ├── projects/             # Project scaffolding/standardization prompts
-│   ├── reviewer/             # Review prompts for existing projects
-│   └── workflows/            # Workflow/orchestration prompts
-└── templates/                # Copyable project/workflow templates
-    └── agent-work/           # Manual sub-agent coordination template
+│   ├── scripts/                       # release/changelog helpers
+│   └── workflows/
+│       ├── reusable-ci-pr-go.yml
+│       ├── reusable-ci-pr-dotnet.yml
+│       ├── reusable-ci-pr-python.yml
+│       ├── reusable-docker-publish.yml
+│       ├── reusable-pr-preview-image.yml
+│       ├── reusable-semantic-pr.yml
+│       ├── reusable-tag-and-release.yml
+│       ├── reusable-agents-doctor.yml # consumers call this from their CI
+│       └── sync-standard.yml          # the sync-bot
+├── ci/                                # CI docs + client wrapper examples
+├── dotnet/
+│   ├── README-api.md
+│   ├── README-web.md
+│   └── observability/                 # starter (vendor into your service)
+├── golang/
+│   ├── README-api.md
+│   ├── README-bot-wa.md
+│   └── observability/                 # pointer to the graduated private library
+├── python/
+│   ├── README-api.md
+│   └── observability/                 # starter (vendor into your service)
+├── prompts/
+│   ├── projects/
+│   ├── reviewer/
+│   └── workflows/
+├── schemas/
+│   └── agents.config.v1.json          # JSON Schema for agents.config.yml
+├── templates/
+│   ├── agents/                        # the vendored AGENTS.md template (v2)
+│   ├── agent-work/                    # manual sub-agent coordination template
+│   └── pi-agent/                      # reference snapshot of ~/.pi/agent/AGENTS.md
+└── tools/
+    └── agents-doctor/                 # Go CLI that validates a repo against the standard
 ```
 
-## Agent instructions
+## v2 standardization
 
-Agents should read:
+Consuming repos vendor the AGENTS.md template from `templates/agents/`. Per-repo
+configuration lives in `agents.config.yml` (validated against
+`schemas/agents.config.v1.json`). The `agents-doctor` Go CLI in `tools/`
+runs in CI and validates the consumer against the rule registry (45 rules).
 
-1. `AGENTS.md`
-2. `RTK.md`
-3. relevant prompt/template for requested work
+The flow is:
 
-Current global agent rule from `RTK.md`:
+1. Consumer repo adds the GitHub topic `caesariodito-standard`.
+2. Sync-bot opens an adoption PR copying `templates/agents/AGENTS.md` and the
+   example `agents.config.yml`.
+3. Consumer fills in `kind`, `language`, `owners`, opt-outs, etc.
+4. Consumer's CI calls `reusable-agents-doctor.yml` on every PR.
 
-```bash
-rtk <command>
-```
-
-Use `rtk` prefix for shell commands in environments where RTK is available.
+See `templates/agents/README.md` for the adoption flow detail and override
+semantics.
 
 ## CI standardization
 
-Reusable GitHub Actions live in:
+Reusable GitHub Actions live under `.github/workflows/reusable-*.yml`.
+Client repos call them by tag:
 
-```text
-.github/workflows/
+```yaml
+uses: caesariodito/.standardization/.github/workflows/reusable-ci-pr-go.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-ci-pr-dotnet.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-ci-pr-python.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-agents-doctor.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-docker-publish.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-pr-preview-image.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-semantic-pr.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-tag-and-release.yml@v2
 ```
 
-Current reusable workflow entrypoints:
-
-```text
-.github/workflows/reusable-ci-pr-dotnet.yml
-.github/workflows/reusable-ci-pr-go.yml
-.github/workflows/reusable-docker-publish.yml
-.github/workflows/reusable-pr-preview-image.yml
-.github/workflows/reusable-semantic-pr.yml
-.github/workflows/reusable-tag-and-release.yml
-```
+Use `@v2` for stable major version updates. Pin to commit SHA when strict
+supply-chain control is needed.
 
 Docs:
 
-```text
-ci/README.md
-ci/client-repository-guide.md
-```
+- `ci/README.md`
+- `ci/client-repository-guide.md`
 
-Client repositories should keep thin wrapper workflows and call this repository's reusable workflows by tag, for example:
+Go workflows support optional private modules through `private_modules_pattern`
+and `GH_PRIVATE_MODULES_TOKEN`. Consuming repositories provide the secret;
+this repository only defines the reusable workflow interface.
 
-```text
-caesariodito/.standardization/.github/workflows/<workflow-file>@v1
-```
-
-Use `@v1` for stable major version updates. Pin to commit SHA when strict supply-chain control is needed.
-
-Go workflows support optional private modules through `private_modules_pattern` and `GH_PRIVATE_MODULES_TOKEN`. Consuming repositories provide the secret; this repository only defines the reusable workflow interface.
-
-## Language/project standards
-
-### .NET
-
-```text
-dotnet/README-api.md
-dotnet/README-web.md
-```
-
-Use for API and web project conventions.
+## Language standards
 
 ### Go
 
 ```text
 golang/README-api.md
 golang/README-bot-wa.md
+golang/observability/README.md     # pointer to the graduated private library
 ```
 
-Use for Go API and bot/WhatsApp platform conventions.
+### .NET
+
+```text
+dotnet/README-api.md
+dotnet/README-web.md
+dotnet/observability/Observability.cs  # starter (vendor into your service)
+```
+
+### Python
+
+```text
+python/README-api.md
+python/observability/observability.py  # starter (vendor into your service)
+```
+
+Each language ships either a starter file (vendored into the consumer) or a
+pointer to a graduated private library. Promotion criterion: 3+ repos have
+used a starter unchanged for one release cycle. Go has graduated; .NET and
+Python remain starters.
+
+## agents-doctor
+
+The Go CLI under `tools/agents-doctor/` validates a repository against the
+v2 rule registry. Status: scaffold + 45-rule registry; per-rule Check
+implementations land in follow-up PRs.
+
+```bash
+cd tools/agents-doctor
+go build -o ./bin/agents-doctor ./cmd/agents-doctor
+./bin/agents-doctor --version
+```
+
+See `tools/agents-doctor/README.md` for architecture, severity model, and
+slug convention.
 
 ## Prompts
 
-Reusable prompts live in:
+Reusable agent prompts live under `prompts/`.
 
-```text
-prompts/
-```
-
-### Project prompts
-
-```text
-prompts/projects/go-backend-logging-project.md
-prompts/projects/go-backend-logging-project-v1.5.md
-prompts/projects/go-backend-logging-project-v2.md
-prompts/projects/go-bot-project-standardization.md
-```
-
-Use these to scaffold or standardize project structure.
-
-### Reviewer prompts
-
-```text
-prompts/reviewer/go-backend-api-standardization-reviewer.md
-prompts/reviewer/go-backend-event-driven-standardization-reviewer.md
-```
-
-Use these to review existing repositories against standard architecture and naming conventions.
-
-### Workflow prompts
-
-```text
-prompts/workflows/manual-subagents-greenfield-development.md
-```
-
-Use this to coordinate manual sub-agent style development in pi or another coding agent when building a new application from a PRD.
+- `prompts/projects/` — project scaffolding/standardization prompts
+- `prompts/reviewer/` — review prompts for existing projects
+- `prompts/workflows/` — workflow/orchestration prompts
 
 ## Manual sub-agent workflow
 
-The manual sub-agent workflow is for greenfield projects where multiple agent sessions contribute without native sub-agent support.
+For greenfield projects where multiple agent sessions contribute without
+native sub-agent support. Core principle: **PRD is direction. Contracts are
+coordination.**
 
-Core principle:
-
-```text
-PRD is direction. Contracts are coordination.
-```
-
-Recommended flow:
+Flow:
 
 ```text
 PRD
@@ -154,13 +168,8 @@ PRD
   → human approves risky/final actions
 ```
 
-Use prompt:
-
-```text
-prompts/workflows/manual-subagents-greenfield-development.md
-```
-
-Copy template into target project:
+Use the prompt at `prompts/workflows/manual-subagents-greenfield-development.md`
+and copy the template:
 
 ```bash
 cp -r templates/agent-work <target-project>/docs/agent-work
@@ -200,44 +209,39 @@ docs/
 
 ### Scaffold a Go bot platform
 
-Use:
-
 ```text
 prompts/projects/go-bot-project-standardization.md
 ```
 
 ### Review a Go backend API
 
-Use:
-
 ```text
 prompts/reviewer/go-backend-api-standardization-reviewer.md
 ```
 
-### Set up manual sub-agent coordination for new app
+### Adopt the v2 standard in a repo
 
-1. Put PRD in target repo:
+1. Add the GitHub topic `caesariodito-standard` to the repo.
+2. Wait for the sync-bot adoption PR, or run it manually:
+   `gh workflow run sync-standard.yml -f dry_run=false -f tag=v2.0.0`.
+3. Edit the seeded `agents.config.yml` for `kind`, `language`, `owners`.
+4. Add `agents-doctor.yml` workflow that calls `reusable-agents-doctor.yml@v2`.
 
-```text
-docs/prd.md
-```
+## Releases
 
-2. Copy agent-work template:
+- `vX.Y.Z` patch — typo, copy edit, doctor bug fix.
+- `vX.Y.0` minor — new rule (ships at `warn`), new section in template.
+- `vX.0.0` major — breaking change (rule renamed/removed, semantic shift).
 
-```bash
-cp -r /mnt/f/Documents/_PROJECTS/.standardization/templates/agent-work <target-repo>/docs/agent-work
-```
-
-3. Run leader-agent prompt from:
-
-```text
-/mnt/f/Documents/_PROJECTS/.standardization/prompts/workflows/manual-subagents-greenfield-development.md
-```
+Tagging triggers the sync-bot via `sync-standard.yml` (currently manual via
+`workflow_dispatch`; promotion to `release: published` deferred until the
+first proven run).
 
 ## Maintenance notes
 
-- Keep prompts practical and implementation-ready.
-- Avoid vague standards that agents cannot verify.
-- Prefer explicit folder structures, naming rules, contracts, and acceptance criteria.
-- Update this README when adding new standardization areas.
-- Version reusable CI workflows with tags before client repositories depend on them.
+- Keep prompts and templates implementation-ready. Vague standards are
+  worse than no standard — agents can't verify them.
+- Rule slugs in the doctor's registry are public API. Renaming a slug is a
+  breaking change.
+- New doctor rules ship at `warn` first; promote to `error` after a clean
+  run cycle across consumers.
