@@ -1,0 +1,21 @@
+# Per-rule opt-outs.
+#
+# Every entry must have a `rule` (must be a real slug from the doctor's
+# registry) and a non-empty `reason`. `expires` is recommended; the doctor
+# warns when missing, and warns again once an opt-out is past its expiry.
+#
+# Move expired entries to a CHANGELOG note explaining the resolution rather
+# than silently extending — the friction is the point.
+
+optouts:
+  - rule: healthz.readiness
+    reason: "internal cron worker, no inbound traffic"
+    expires: 2026-12-31
+
+  - rule: secrets.no-env-files
+    reason: "legacy migration tracked in PRD-0014, removing 2026-08"
+    expires: 2026-08-01
+
+  - rule: api-contract.bruno-coverage
+    reason: "websocket endpoints not yet supported by Bruno"
+    expires: 2026-09-30

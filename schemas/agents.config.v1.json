@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://caesariodito.github.io/standardization/schemas/agents.config.v1.json",
+  "title": "agents.config.yml v1",
+  "type": "object",
+  "required": ["schema", "standard_version", "repo"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "type": "string",
+      "enum": ["v1"]
+    },
+    "standard_version": {
+      "type": "string",
+      "pattern": "^v\\d+\\.\\d+\\.\\d+$"
+    },
+    "repo": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["service", "library", "app", "infra", "docs"]
+        },
+        "language": {
+          "type": "string",
+          "enum": ["go", "ts", "py", "dotnet", "mixed"]
+        },
+        "runtime": { "type": "string" },
+        "owners": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code":    { "type": "array", "items": { "type": "string" } },
+            "product": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "is_api":        { "type": "boolean" },
+        "contract_path": { "type": "string" },
+        "bruno_path":    { "type": "string" }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logger":  { "type": "string", "enum": ["slog", "pino", "structlog", "serilog"] },
+        "metrics": { "type": "string", "enum": ["prometheus", "none"] },
+        "tracing": { "type": "string", "enum": ["otel", "none"] }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deploy_envs": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["dev", "staging", "prod"] }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "infisical_url": { "type": "string", "format": "uri" },
+        "projects": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "nonprod":        { "type": "string" },
+            "prod":           { "type": "string" },
+            "shared_nonprod": { "type": "string" },
+            "shared_prod":    { "type": "string" }
+          }
+        }
+      }
+    },
+    "standard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto_update": { "type": "boolean" },
+        "auto_merge":  { "type": "string", "enum": ["patch", "minor", "none"] }
+      }
+    },
+    "optouts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "rule":    { "type": "string", "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$" },
+          "reason":  { "type": "string", "minLength": 1 },
+          "expires": { "type": "string", "format": "date" }
+        }
+      }
+    }
+  }
+}
