@@ -1,0 +1,116 @@
+name: Reusable CI PR (Python)
+
+on:
+  workflow_call:
+    inputs:
+      python_version:
+        description: "Python version to set up"
+        required: false
+        default: "3.12"
+        type: string
+      package_manager:
+        description: "Package manager (uv | poetry | pip)"
+        required: false
+        default: "uv"
+        type: string
+      install_command:
+        description: "Install command. Defaults are inferred from package_manager."
+        required: false
+        default: ""
+        type: string
+      lint_command:
+        description: "Lint command (ruff by default)"
+        required: false
+        default: "ruff check ."
+        type: string
+      format_check_command:
+        description: "Format check command (ruff format --check by default)"
+        required: false
+        default: "ruff format --check ."
+        type: string
+      typecheck_command:
+        description: "Type check command. Empty string skips."
+        required: false
+        default: "mypy src"
+        type: string
+      test_command:
+        description: "Test command"
+        required: false
+        default: "pytest -q"
+        type: string
+      run_typecheck:
+        description: "Run the typecheck step"
+        required: false
+        default: true
+        type: boolean
+      skip_draft_pr:
+        description: "Skip execution for draft pull requests"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    if: ${{ inputs.skip_draft_pr != true || github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+          cache: pip
+
+      - name: Setup uv
+        if: ${{ inputs.package_manager == 'uv' }}
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.install_command }}" ]; then
+            ${{ inputs.install_command }}
+            exit 0
+          fi
+          case "${{ inputs.package_manager }}" in
+            uv)
+              uv sync --frozen
+              ;;
+            poetry)
+              pip install --upgrade poetry
+              poetry install --no-interaction
+              ;;
+            pip)
+              pip install --upgrade pip
+              if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+              if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+              ;;
+            *)
+              echo "Unknown package_manager: ${{ inputs.package_manager }}"
+              exit 1
+              ;;
+          esac
+
+      - name: Lint (ruff)
+        shell: bash
+        run: ${{ inputs.lint_command }}
+
+      - name: Format check (ruff)
+        shell: bash
+        run: ${{ inputs.format_check_command }}
+
+      - name: Typecheck
+        if: ${{ inputs.run_typecheck && inputs.typecheck_command != '' }}
+        shell: bash
+        run: ${{ inputs.typecheck_command }}
+
+      - name: Test
+        shell: bash
+        run: ${{ inputs.test_command }}

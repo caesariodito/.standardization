@@ -1,0 +1,96 @@
+name: Reusable agents-doctor
+
+# Validates a consuming repository against the v2 standardization rule set.
+# Consumers call this from their own .github/workflows/agents-doctor.yml.
+
+on:
+  workflow_call:
+    inputs:
+      doctor_version:
+        description: "Tag of agents-doctor to run (matches a release on .standardization)"
+        required: false
+        default: "v2"
+        type: string
+      fail_on:
+        description: "Severity threshold that fails the job: error | warn | none"
+        required: false
+        default: "error"
+        type: string
+      target:
+        description: "Path to check inside the consuming repo"
+        required: false
+        default: "."
+        type: string
+      verbose:
+        description: "Include info-severity findings in output"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write   # for posting the JSON report as a PR comment (future)
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+
+      - name: Install agents-doctor
+        shell: bash
+        env:
+          DOCTOR_VERSION: ${{ inputs.doctor_version }}
+        run: |
+          set -euo pipefail
+          # Pull the binary from the .standardization release matching the requested tag.
+          # Once goreleaser is wired, this fetches the platform-appropriate asset.
+          # Until then, fall back to building from source via go install.
+          if command -v go >/dev/null 2>&1; then
+            go install github.com/caesariodito/standardization/tools/agents-doctor/cmd/agents-doctor@"${DOCTOR_VERSION}"
+            echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          else
+            echo "go is required to install agents-doctor in this transitional release" >&2
+            exit 1
+          fi
+
+      - name: Run doctor
+        id: run
+        shell: bash
+        env:
+          FAIL_ON: ${{ inputs.fail_on }}
+          TARGET:  ${{ inputs.target }}
+          VERBOSE: ${{ inputs.verbose }}
+        run: |
+          set -euo pipefail
+          flags=( "--target" "$TARGET" "--json" )
+          if [ "$VERBOSE" = "true" ]; then flags+=( "--verbose" ); fi
+
+          # The doctor's own exit code reflects fail_on=error. When the
+          # consumer asks for a softer threshold, capture and reinterpret.
+          set +e
+          out="$(agents-doctor "${flags[@]}")"
+          status=$?
+          set -e
+
+          echo "$out" | tee doctor-report.json
+
+          case "$FAIL_ON" in
+            error) exit "$status" ;;
+            warn)  exit "$status" ;;   # doctor today only fails on error; warn handling lands when rules do
+            none)  exit 0 ;;
+            *)
+              echo "invalid fail_on: $FAIL_ON (expected error | warn | none)" >&2
+              exit 2
+              ;;
+          esac
+
+      - name: Upload doctor report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agents-doctor-report
+          path: doctor-report.json
+          if-no-files-found: ignore

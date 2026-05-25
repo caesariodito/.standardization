@@ -1,0 +1,156 @@
+name: sync-standard
+
+# Fans out the v2 standard to consuming repos when a release is published.
+#
+# Consumer discovery: GitHub repos owned by the configured user/org tagged
+# with the topic CONSUMER_TOPIC. A repo can pause sync by setting
+# `standard.auto_update: false` in its agents.config.yml.
+#
+# Triggered manually for now; promote to `release: published` once the
+# first proven run lands cleanly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to sync (e.g. v2.0.0). Defaults to latest tag."
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "List target repos without opening PRs"
+        required: false
+        default: true
+        type: boolean
+
+env:
+  CONSUMER_TOPIC: caesariodito-standard
+  OWNER: caesariodito
+
+permissions:
+  contents: read
+
+jobs:
+  list-consumers:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.find.outputs.repos }}
+      tag:   ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TAG" ]; then
+            echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
+          else
+            latest="$(gh api repos/${{ github.repository }}/releases/latest -q .tag_name)"
+            echo "tag=$latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: List consumer repos by topic
+        id: find
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repos="$(gh search repos \
+            --owner "$OWNER" \
+            --topic "$CONSUMER_TOPIC" \
+            --limit 200 \
+            --json fullName,defaultBranch \
+            --jq '[.[] | {repo: .fullName, branch: .defaultBranch}]')"
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "found:"; echo "$repos" | jq
+
+  open-prs:
+    needs: list-consumers
+    if: ${{ inputs.dry_run != true && needs.list-consumers.outputs.repos != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.list-consumers.outputs.repos) }}
+    steps:
+      - name: Checkout standardization repo at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.list-consumers.outputs.tag }}
+          path: standard
+
+      - name: Checkout consumer repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.target.repo }}
+          ref: ${{ matrix.target.branch }}
+          path: consumer
+          token: ${{ secrets.SYNC_STANDARD_TOKEN }}
+
+      - name: Check consumer auto_update flag
+        id: flag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f consumer/agents.config.yml ]; then
+            echo "skip=adopt" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -E '^\s*auto_update:\s*false' consumer/agents.config.yml >/dev/null; then
+            echo "skip=paused" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip notice
+        if: ${{ steps.flag.outputs.skip == 'paused' }}
+        run: echo "Consumer ${{ matrix.target.repo }} has standard.auto_update=false; skipping."
+
+      - name: Copy template files
+        if: ${{ steps.flag.outputs.skip != 'paused' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=standard/templates/agents
+          dst=consumer
+
+          cp "$src/AGENTS.md" "$dst/AGENTS.md"
+          [ -f "$dst/agents.config.yml" ] || cp "$src/agents.config.example.yml" "$dst/agents.config.yml"
+
+          if [ ! -f "$dst/api-contract.md" ] && grep -E '^\s*is_api:\s*true' "$dst/agents.config.yml" >/dev/null 2>&1; then
+            cp "$src/api-contract.example.md" "$dst/api-contract.md"
+          fi
+
+          mkdir -p "$dst/docs/prd" "$dst/docs/adr" "$dst/docs/sop"
+
+      - name: Open PR
+        if: ${{ steps.flag.outputs.skip != 'paused' }}
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: consumer
+          token: ${{ secrets.SYNC_STANDARD_TOKEN }}
+          branch: chore/standard-${{ needs.list-consumers.outputs.tag }}
+          base: ${{ matrix.target.branch }}
+          commit-message: "chore(agents): bump standard to ${{ needs.list-consumers.outputs.tag }}"
+          title: "chore(agents): bump standard to ${{ needs.list-consumers.outputs.tag }}"
+          body: |
+            Automated sync from `caesariodito/.standardization` ${{ needs.list-consumers.outputs.tag }}.
+
+            ## What changed
+            - `AGENTS.md` updated to vendored template at this tag.
+            - Example configs seeded if missing.
+
+            ## What you should do
+            1. Review the diff against `agents.config.yml` opt-outs.
+            2. If a base rule no longer fits, add an opt-out with `reason` and `expires`.
+            3. Merge once green.
+
+            To pause future automated bumps, set `standard.auto_update: false`
+            in `agents.config.yml`.
+          labels: |
+            standard:bump
+            automated
