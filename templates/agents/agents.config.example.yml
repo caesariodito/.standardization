@@ -1,0 +1,48 @@
+schema: v1
+
+# Pinned to a tag in caesariodito/.standardization. The sync-bot bumps this.
+standard_version: v2.0.0
+
+repo:
+  name: orders-service
+  kind: service                        # service | library | app | infra | docs
+  language: go                         # go | ts | py | dotnet | mixed
+  runtime: "go 1.22"
+  owners:
+    code: ["@caesariodito"]
+    product: ["@caesariodito"]
+
+api:
+  is_api: true                         # turns on api-contract.md + bruno rules
+  contract_path: api-contract.md
+  bruno_path: api/bruno
+
+observability:
+  logger: slog                         # slog | pino | structlog | serilog
+  metrics: prometheus
+  tracing: otel
+
+ci:
+  deploy_envs: ["dev", "staging", "prod"]
+
+secrets:
+  infisical_url: "https://infisical.example.com"
+  projects:
+    nonprod: "orders-service-nonprod"
+    prod: "orders-service-prod"
+    shared_nonprod: "shared-nonprod"
+    shared_prod: "shared-prod"
+
+# Bot behaviour for this repo (Q12).
+standard:
+  auto_update: true                    # set false to pause sync-bot PRs (e.g. mid-migration)
+  auto_merge: minor                    # patch | minor | none
+
+# Per-rule opt-outs. Every entry must have a reason. expires is recommended.
+optouts:
+  - rule: healthz.readiness
+    reason: "internal cron worker, no inbound traffic"
+    expires: 2026-12-31
+  - rule: secrets.no-env-files
+    reason: "legacy, tracked in PRD-0014"
+    expires: 2026-08-01
