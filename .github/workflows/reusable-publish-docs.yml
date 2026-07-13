@@ -1,0 +1,86 @@
+name: Reusable Publish Docs
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: "Subfolder name in the hub for this project's docs"
+        required: true
+        type: string
+      hub_repo:
+        description: "owner/name of the public docs hub repo"
+        required: false
+        default: "deccara-tech/documentations"
+        type: string
+      source_path:
+        description: "Path in source repo holding the HTML docs"
+        required: false
+        default: "docs"
+        type: string
+    secrets:
+      HUB_TOKEN:
+        description: "PAT with write access to the hub repo"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Checkout hub
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.hub_repo }}
+          token: ${{ secrets.HUB_TOKEN }}
+          path: hub
+
+      - name: Copy docs into hub subfolder
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="hub/${{ inputs.project }}"
+          rm -rf "$dest"
+          mkdir -p "$dest"
+          cp ${{ inputs.source_path }}/*.html "$dest"/
+          cp ${{ inputs.source_path }}/docs-engine.js "$dest"/
+          cp ${{ inputs.source_path }}/docs-styles.css "$dest"/
+
+      - name: Regenerate hub landing index
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hub
+          # ponytail: plain generated list; swap for shared docs-styles.css theme if the hub needs the WhatsApp look
+          {
+            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            echo '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            echo '<title>Documentations</title>'
+            echo '<style>body{font:16px/1.5 system-ui,sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem}a{display:block;padding:.6rem 0;border-bottom:1px solid #eee;text-decoration:none;color:#128c7e}h1{color:#075e54}</style>'
+            echo '</head><body><h1>Documentations</h1>'
+            for d in */; do
+              name="${d%/}"
+              [ -f "$d/index.html" ] || continue
+              echo "<a href=\"./$name/\">$name</a>"
+            done
+            echo '</body></html>'
+          } > index.html
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hub
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No doc changes."
+          else
+            git commit -m "docs: publish ${{ inputs.project }} (${{ github.ref_name }})"
+            git push
+          fi
