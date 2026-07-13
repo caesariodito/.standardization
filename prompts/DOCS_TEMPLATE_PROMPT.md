@@ -34,7 +34,7 @@ demo. `DOCS_DATA` shape:
 window.DOCS_DATA = {
   project, tagline, repo, fallbackVersion,
   audience,             // "User Guide" or "Technical Docs"
-  crossLink: { href, label },   // link to the sibling doc
+  crossLink: { href, label },   // sibling doc; or an array [{href,label},...] for 3+ docs
   sections: [
     { id, nav, title, type:"html",      html },
     { id, nav, title, type:"changelog", items:[{v,notes}] },
@@ -54,7 +54,7 @@ Section `type` dispatch — implement all five:
 
 ### 3. Fixed heading / section format
 
-- Sidebar: project name (logo), audience label (accent color), `version <tag>`, a cross-link button to the sibling doc, then nav links (one per section, using `nav || title`).
+- Sidebar: project name (logo), audience label (accent color), `version <tag>`, a cross-link button to the sibling doc (or one button per sibling when `crossLink` is an array — used for optional extra pages beyond the User/Technical pair), then nav links (one per section, using `nav || title`).
 - Header (top of `main`): version badge + a `GitHub ↗` pill, `<h1>` project name, muted tagline.
 - Each section: `<h2>` title with a bottom border, `scroll-margin-top`, generous bottom spacing.
 - Footer: `project · audience · source link · generated <date> · version <tag>`.
