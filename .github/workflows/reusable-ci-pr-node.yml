@@ -1,0 +1,72 @@
+name: Reusable CI PR (Node)
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: "Node.js version to set up"
+        required: false
+        default: "22"
+        type: string
+      working_directory:
+        description: "Directory containing package.json and package-lock.json"
+        required: false
+        default: "."
+        type: string
+      test_command:
+        description: "Test command. Empty string skips."
+        required: false
+        default: "npm test"
+        type: string
+      check_command:
+        description: "Static check command. Empty string skips."
+        required: false
+        default: ""
+        type: string
+      build_command:
+        description: "Build command. Empty string skips."
+        required: false
+        default: "npm run build"
+        type: string
+      skip_draft_pr:
+        description: "Skip execution for draft pull requests"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    if: ${{ inputs.skip_draft_pr != true || github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working_directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        if: ${{ inputs.test_command != '' }}
+        run: ${{ inputs.test_command }}
+
+      - name: Check
+        if: ${{ inputs.check_command != '' }}
+        run: ${{ inputs.check_command }}
+
+      - name: Build
+        if: ${{ inputs.build_command != '' }}
+        run: ${{ inputs.build_command }}
