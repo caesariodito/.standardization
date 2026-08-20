@@ -32,32 +32,10 @@ on:
       github_app_id:
         required: true
         type: string
-      infisical_identity_id:
-        required: true
-        type: string
-      infisical_project_id:
-        required: true
-        type: string
-      infisical_environment:
-        required: true
-        type: string
-      infisical_base_url:
-        required: false
-        default: https://app.infisical.com
-        type: string
-      infisical_oidc_audience:
-        required: false
-        default: infisical
-        type: string
-      infisical_secret_path:
-        required: false
-        default: /
-        type: string
-      infisical_app_private_key_secret:
-        required: true
-        type: string
     secrets:
       NINE_ROUTER_API_KEY:
+        required: true
+      GH_PRIVATE_APP_KEY:
         required: true
 
 permissions:
@@ -226,12 +204,11 @@ jobs:
 
   publish:
     needs: implement
-    runs-on: ${{ inputs.runner_label }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       issues: write
-      id-token: write
     steps:
       - name: Checkout versioned harness
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -256,17 +233,11 @@ jobs:
         env:
           BRANCH_NAME: ${{ needs.implement.outputs.branch }}
         run: git fetch ../implementation-artifact/work.bundle "$BRANCH_NAME:$BRANCH_NAME" && git switch "$BRANCH_NAME"
-      - name: Mint repository-scoped GitHub App token via Infisical OIDC
+      - name: Mint repository-scoped GitHub App token
         id: app
         env:
-          INFISICAL_BASE_URL: ${{ inputs.infisical_base_url }}
-          INFISICAL_OIDC_AUDIENCE: ${{ inputs.infisical_oidc_audience }}
-          INFISICAL_IDENTITY_ID: ${{ inputs.infisical_identity_id }}
-          INFISICAL_PROJECT_ID: ${{ inputs.infisical_project_id }}
-          INFISICAL_ENVIRONMENT: ${{ inputs.infisical_environment }}
-          INFISICAL_SECRET_PATH: ${{ inputs.infisical_secret_path }}
-          INFISICAL_APP_PRIVATE_KEY_SECRET: ${{ inputs.infisical_app_private_key_secret }}
           GITHUB_APP_ID: ${{ inputs.github_app_id }}
+          GH_PRIVATE_APP_KEY: ${{ secrets.GH_PRIVATE_APP_KEY }}
         run: node agent-harness/harness/scripts/mint-app-token.mjs
       - name: Push agent branch
         working-directory: consumer

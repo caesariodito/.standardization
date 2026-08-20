@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   issues: write
-  id-token: write
 
 jobs:
   implement:
@@ -22,11 +21,4 @@ jobs:
       timeout_minutes: ${{ fromJSON(vars.AI_IMPLEMENTER_TIMEOUT_MINUTES || '60') }}
       check_command: ${{ vars.AI_IMPLEMENTER_CHECK_COMMAND || '' }}
       github_app_id: ${{ vars.AI_GITHUB_APP_ID }}
-      infisical_identity_id: ${{ vars.AI_INFISICAL_IDENTITY_ID }}
-      infisical_project_id: ${{ vars.AI_INFISICAL_PROJECT_ID }}
-      infisical_environment: ${{ vars.AI_INFISICAL_ENVIRONMENT }}
-      infisical_base_url: ${{ vars.AI_INFISICAL_BASE_URL || 'https://app.infisical.com' }}
-      infisical_oidc_audience: ${{ vars.AI_INFISICAL_OIDC_AUDIENCE || 'infisical' }}
-      infisical_secret_path: ${{ vars.AI_INFISICAL_SECRET_PATH || '/' }}
-      infisical_app_private_key_secret: ${{ vars.AI_INFISICAL_APP_PRIVATE_KEY_SECRET }}
     secrets: inherit

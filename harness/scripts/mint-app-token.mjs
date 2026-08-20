@@ -1,25 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 
-const required = ["ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "INFISICAL_IDENTITY_ID", "INFISICAL_PROJECT_ID", "INFISICAL_ENVIRONMENT", "INFISICAL_APP_PRIVATE_KEY_SECRET", "GITHUB_APP_ID", "GITHUB_REPOSITORY"];
+const required = ["GITHUB_APP_ID", "GH_PRIVATE_APP_KEY", "GITHUB_REPOSITORY"];
 for (const name of required) if (!process.env[name]) throw new Error(`${name} is required`);
-const infisicalBase = (process.env.INFISICAL_BASE_URL || "https://app.infisical.com").replace(/\/$/, "");
-const audience = process.env.INFISICAL_OIDC_AUDIENCE || "infisical";
-const oidcResponse = await fetch(`${process.env.ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${encodeURIComponent(audience)}`, { headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` } });
-if (!oidcResponse.ok) throw new Error(`GitHub OIDC request failed: ${oidcResponse.status}`);
-const oidcJwt = (await oidcResponse.json()).value;
-const loginResponse = await fetch(`${infisicalBase}/api/v1/auth/oidc-auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ identityId: process.env.INFISICAL_IDENTITY_ID, jwt: oidcJwt }) });
-if (!loginResponse.ok) throw new Error(`Infisical OIDC login failed: ${loginResponse.status}`);
-const accessToken = (await loginResponse.json()).accessToken;
-const secretName = process.env.INFISICAL_APP_PRIVATE_KEY_SECRET;
-const secretUrl = new URL(`${infisicalBase}/api/v3/secrets/raw/${encodeURIComponent(secretName)}`);
-secretUrl.searchParams.set("workspaceId", process.env.INFISICAL_PROJECT_ID);
-secretUrl.searchParams.set("environment", process.env.INFISICAL_ENVIRONMENT);
-secretUrl.searchParams.set("secretPath", process.env.INFISICAL_SECRET_PATH || "/");
-const secretResponse = await fetch(secretUrl, { headers: { authorization: `Bearer ${accessToken}` } });
-if (!secretResponse.ok) throw new Error(`Infisical secret retrieval failed: ${secretResponse.status}`);
-const privateKey = (await secretResponse.json()).secret?.secretValue;
-if (!privateKey) throw new Error("Infisical response did not contain the App private key");
+const privateKey = process.env.GH_PRIVATE_APP_KEY;
 
 const b64url = (value) => Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
 const now = Math.floor(Date.now() / 1000);
