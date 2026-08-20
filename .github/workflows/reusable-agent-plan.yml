@@ -1,0 +1,215 @@
+name: Reusable agent plan
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      action:
+        description: "plan, replan, or approve"
+        required: true
+        type: string
+      actor:
+        required: true
+        type: string
+      runner_label:
+        description: "Platform-owned label for a one-job ephemeral Planner runner"
+        required: true
+        type: string
+      router_base_url:
+        required: true
+        type: string
+      model:
+        required: false
+        default: engineering-planner
+        type: string
+      timeout_minutes:
+        required: false
+        default: 15
+        type: number
+    secrets:
+      NINE_ROUTER_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: agent-${{ github.repository }}-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    if: ${{ inputs.action == 'approve' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Approve latest plan deterministically
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TRIGGER_ACTOR: ${{ inputs.actor }}
+        run: node agent-harness/harness/scripts/github-state.mjs approve
+
+  plan:
+    if: ${{ inputs.action == 'plan' || inputs.action == 'replan' }}
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - name: Checkout versioned harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Record harness SHA
+        id: harness
+        working-directory: agent-harness
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Install pinned harness
+        run: npm ci --prefix agent-harness/harness --ignore-scripts
+      - name: Fetch issue context and default branch
+        id: context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          CONTEXT_FILE: ${{ runner.temp }}/issue-context.json
+        run: node agent-harness/harness/scripts/fetch-issue-context.mjs
+      - name: Start legal state transition
+        id: state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TRIGGER_ACTOR: ${{ inputs.actor }}
+          AGENT_ACTION: ${{ inputs.action }}
+        run: node agent-harness/harness/scripts/github-state.mjs start --action "$AGENT_ACTION"
+      - name: Checkout consumer default branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.context.outputs.default_sha }}
+          path: consumer
+          persist-credentials: false
+      - name: Run Planner and one bounded correction
+        id: planner
+        working-directory: consumer
+        env:
+          NINE_ROUTER_BASE_URL: ${{ inputs.router_base_url }}
+          NINE_ROUTER_API_KEY: ${{ secrets.NINE_ROUTER_API_KEY }}
+          NINE_ROUTER_MODEL: ${{ inputs.model }}
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
+          HARNESS: ${{ github.workspace }}/agent-harness/harness
+          CONTEXT: ${{ runner.temp }}/issue-context.json
+          RAW_PLAN: ${{ runner.temp }}/issue-plan.json
+          VALIDATION_ERROR: ${{ runner.temp }}/plan-validation.txt
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_pi() {
+            "$HARNESS/node_modules/.bin/pi" --print --no-session --no-extensions \
+              --extension "$HARNESS/extensions/9router-provider.ts" \
+              --skill "$HARNESS/skills/issue-planner/SKILL.md" \
+              --append-system-prompt "$(cat "$HARNESS/config/AGENTS.md")" \
+              --provider 9router --model "$NINE_ROUTER_MODEL" --tools read,grep,find,ls \
+              @"$HARNESS/prompts/issue-plan.md" @"$CONTEXT" @"$HARNESS/schemas/issue-plan-v1.json"
+          }
+          run_pi > "$RAW_PLAN"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            run_pi > "$RAW_PLAN"
+            status=$?
+          fi
+          [ "$status" -eq 0 ] || exit "$status"
+          if ! node "$HARNESS/scripts/validate-plan.mjs" "$RAW_PLAN" 2> "$VALIDATION_ERROR"; then
+            "$HARNESS/node_modules/.bin/pi" --print --no-session --no-extensions \
+              --extension "$HARNESS/extensions/9router-provider.ts" \
+              --skill "$HARNESS/skills/issue-planner/SKILL.md" \
+              --append-system-prompt "$(cat "$HARNESS/config/AGENTS.md")" \
+              --provider 9router --model "$NINE_ROUTER_MODEL" --tools read,grep,find,ls \
+              @"$HARNESS/prompts/issue-plan.md" @"$CONTEXT" @"$HARNESS/schemas/issue-plan-v1.json" \
+              @"$RAW_PLAN" @"$VALIDATION_ERROR" \
+              "Correct the invalid result once. Return only the complete corrected JSON object." > "${RAW_PLAN}.corrected"
+            mv "${RAW_PLAN}.corrected" "$RAW_PLAN"
+            node "$HARNESS/scripts/validate-plan.mjs" "$RAW_PLAN"
+          fi
+      - name: Render immutable Plan Draft
+        id: render
+        env:
+          PLAN_VERSION: ${{ steps.state.outputs.plan_version }}
+          REPO_SHA: ${{ steps.context.outputs.default_sha }}
+          HARNESS_SHA: ${{ steps.harness.outputs.sha }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PRIOR_PLAN_URL: ${{ steps.state.outputs.prior_plan_url }}
+          MODEL: ${{ inputs.model }}
+          RUN_ID: ${{ github.run_id }}
+          RAW_PLAN: ${{ runner.temp }}/issue-plan.json
+          RENDERED_PLAN: ${{ runner.temp }}/issue-plan.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAN_SHA="$(sha256sum "$RAW_PLAN" | cut -d' ' -f1)"
+          export PLAN_SHA
+          echo "PLAN_SHA=$PLAN_SHA" >> "$GITHUB_ENV"
+          node agent-harness/harness/scripts/render-plan.mjs "$RAW_PLAN" "$RENDERED_PLAN"
+          PLAN_OUTCOME="$(node -e 'const p=require(process.argv[1]); process.stdout.write(p.outcome === "needs-input" ? "blocked" : "success")' "$RAW_PLAN")"
+          echo "outcome=$PLAN_OUTCOME" >> "$GITHUB_OUTPUT"
+      - name: Post Plan Draft
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: node agent-harness/harness/scripts/github-state.mjs comment --file "${{ runner.temp }}/issue-plan.md"
+      - name: Complete planning state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          AGENT_ACTION: ${{ inputs.action }}
+          PLAN_OUTCOME: ${{ steps.render.outputs.outcome }}
+        run: node agent-harness/harness/scripts/github-state.mjs finish --action "$AGENT_ACTION" --outcome "$PLAN_OUTCOME"
+      - name: Assign failure state
+        if: ${{ failure() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          AGENT_ACTION: ${{ inputs.action }}
+        run: node agent-harness/harness/scripts/github-state.mjs fail --action "$AGENT_ACTION"
+      - name: Upload planning evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-plan-${{ inputs.issue_number }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/issue-context.json
+            ${{ runner.temp }}/issue-plan.json
+            ${{ runner.temp }}/issue-plan.md
+            ${{ runner.temp }}/plan-validation.txt
+          if-no-files-found: ignore
+          retention-days: 30
+
+  finalize-failure:
+    needs: plan
+    if: ${{ always() && (inputs.action == 'plan' || inputs.action == 'replan') && needs.plan.result != 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Recover stranded planning state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          AGENT_ACTION: ${{ inputs.action }}
+        run: node agent-harness/harness/scripts/github-state.mjs fail --action "$AGENT_ACTION"

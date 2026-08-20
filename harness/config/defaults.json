@@ -1,0 +1,12 @@
+{
+  "planner": {
+    "model": "engineering-planner",
+    "timeout_minutes": 15,
+    "retries": { "infrastructure": 1, "schema": 1 }
+  },
+  "implementer": {
+    "model": "engineering-implementer",
+    "timeout_minutes": 60,
+    "retries": { "infrastructure": 1 }
+  }
+}

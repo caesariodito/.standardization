@@ -38,6 +38,7 @@ standardizing projects across local repositories.
 ├── python/
 │   ├── README-api.md
 │   └── observability/                 # starter (vendor into your service)
+├── harness/                          # pilot issue planning/implementation runtime
 ├── prompts/
 │   ├── projects/
 │   ├── reviewer/
@@ -93,6 +94,26 @@ Docs:
 
 - `ci/README.md`
 - `ci/client-repository-guide.md`
+- `harness/README.md` — one-repository agent harness pilot
+
+### Engineering agent harness pilot
+
+The pilot adds reusable plan/replan/approve and implement workflows plus thin
+consumer callers:
+
+```yaml
+uses: caesariodito/.standardization/.github/workflows/reusable-agent-plan.yml@v2
+uses: caesariodito/.standardization/.github/workflows/reusable-agent-implement.yml@v2
+```
+
+Copy callers from `templates/workflows/` manually; `sync-standard.yml` does
+not distribute them during the pilot. The label state machine, isolated runner
+requirements, 9Router/Infisical/GitHub App prerequisites, rollback procedure,
+and 3–5 issue scorecard are in `harness/README.md`.
+
+These callers deliberately use mutable `@v2` for fast pilot fixes. Every run
+records the resolved harness SHA, and maintainers must retain the previous SHA
+for rollback. Pin a full SHA instead when strict reproducibility is required.
 
 Go workflows support optional private modules through `private_modules_pattern`
 and `GH_PRIVATE_MODULES_TOKEN`. Consuming repositories provide the secret;

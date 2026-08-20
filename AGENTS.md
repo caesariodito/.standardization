@@ -10,6 +10,20 @@
 This repo follows the global routing in `~/.pi/agent/AGENTS.md`. Repo
 metadata and opt-outs live in [`agents.config.yml`](./agents.config.yml).
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default five-role triage vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain-doc layout. See `docs/agents/domain.md`.
+
 ## Working on this repo
 
 Common tasks fall into four shapes:

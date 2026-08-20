@@ -1,0 +1,341 @@
+name: Reusable agent implement
+
+on:
+  workflow_call:
+    inputs:
+      issue_number:
+        required: true
+        type: number
+      actor:
+        required: true
+        type: string
+      runner_label:
+        description: "Platform-owned label for a one-job ephemeral Implementer runner"
+        required: true
+        type: string
+      router_base_url:
+        required: true
+        type: string
+      model:
+        required: false
+        default: engineering-implementer
+        type: string
+      timeout_minutes:
+        required: false
+        default: 60
+        type: number
+      check_command:
+        description: "Trusted repository check command; empty lets repository instructions govern checks"
+        required: false
+        default: ""
+        type: string
+      github_app_id:
+        required: true
+        type: string
+      infisical_identity_id:
+        required: true
+        type: string
+      infisical_project_id:
+        required: true
+        type: string
+      infisical_environment:
+        required: true
+        type: string
+      infisical_base_url:
+        required: false
+        default: https://app.infisical.com
+        type: string
+      infisical_oidc_audience:
+        required: false
+        default: infisical
+        type: string
+      infisical_secret_path:
+        required: false
+        default: /
+        type: string
+      infisical_app_private_key_secret:
+        required: true
+        type: string
+    secrets:
+      NINE_ROUTER_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: agent-${{ github.repository }}-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    outputs:
+      outcome: ${{ steps.bundle.outputs.outcome }}
+      branch: ${{ steps.branch.outputs.name }}
+      base_branch: ${{ steps.context.outputs.default_branch }}
+      harness_sha: ${{ steps.harness.outputs.sha }}
+    steps:
+      - name: Checkout versioned harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Record harness SHA
+        id: harness
+        working-directory: agent-harness
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Install pinned harness
+        run: npm ci --prefix agent-harness/harness --ignore-scripts
+      - name: Fetch approved issue context
+        id: context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          CONTEXT_FILE: ${{ runner.temp }}/issue-context.json
+        run: node agent-harness/harness/scripts/fetch-issue-context.mjs
+      - name: Verify actor, approval, and plan marker
+        id: approved
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TRIGGER_ACTOR: ${{ inputs.actor }}
+        run: node agent-harness/harness/scripts/github-state.mjs inspect-implementation
+      - name: Checkout consumer default branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.context.outputs.default_sha }}
+          fetch-depth: 0
+          path: consumer
+          persist-credentials: false
+      - name: Compare approved repository state
+        working-directory: consumer
+        env:
+          APPROVED_SHA: ${{ steps.approved.outputs.repo_sha }}
+          CURRENT_SHA: ${{ steps.context.outputs.default_sha }}
+          CHANGED_FILE_LIST: ${{ runner.temp }}/changed-files.txt
+          CHANGED_FILES_JSON: ${{ runner.temp }}/changed-files.json
+          EXPECTED_FILES: ${{ steps.approved.outputs.expected_files }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$APPROVED_SHA" = "$CURRENT_SHA" ]; then
+            : > "$CHANGED_FILE_LIST"
+          elif git cat-file -e "${APPROVED_SHA}^{commit}"; then
+            git diff --name-only "$APPROVED_SHA" "$CURRENT_SHA" > "$CHANGED_FILE_LIST"
+          else
+            printf '%s' "$EXPECTED_FILES" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>JSON.parse(s).forEach(x=>console.log(x)))' > "$CHANGED_FILE_LIST"
+          fi
+          node -e 'const fs=require("fs"); const p=process.argv[1]; const xs=fs.readFileSync(p,"utf8").split(/\r?\n/).filter(Boolean); process.stdout.write(JSON.stringify(xs))' "$CHANGED_FILE_LIST" > "$CHANGED_FILES_JSON"
+      - name: Start implementation state after drift check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          TRIGGER_ACTOR: ${{ inputs.actor }}
+        run: node agent-harness/harness/scripts/github-state.mjs start --action implement --current-sha "${{ steps.context.outputs.default_sha }}" --changed-files "${{ runner.temp }}/changed-files.json"
+      - name: Create local agent branch
+        id: branch
+        working-directory: consumer
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="agent/issue-${ISSUE_NUMBER}-${RUN_ID}"
+          git switch -c "$branch"
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+      - name: Run Implementer without write credentials
+        id: pi
+        continue-on-error: true
+        working-directory: consumer
+        env:
+          NINE_ROUTER_BASE_URL: ${{ inputs.router_base_url }}
+          NINE_ROUTER_API_KEY: ${{ secrets.NINE_ROUTER_API_KEY }}
+          NINE_ROUTER_MODEL: ${{ inputs.model }}
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
+          HARNESS: ${{ github.workspace }}/agent-harness/harness
+          CONTEXT: ${{ runner.temp }}/issue-context.json
+          IMPLEMENTATION_REPORT: ${{ runner.temp }}/implementation-report.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$HARNESS/node_modules/.bin/pi" --print --no-session --no-extensions \
+            --extension "$HARNESS/extensions/9router-provider.ts" \
+            --skill "$HARNESS/skills/implementer/SKILL.md" \
+            --append-system-prompt "$(cat "$HARNESS/config/AGENTS.md")" \
+            --provider 9router --model "$NINE_ROUTER_MODEL" --tools read,grep,find,ls,bash,edit,write \
+            @"$CONTEXT" "Implement the approved latest Plan Draft. Finish with the required Implementer handoff." \
+            | tee "$IMPLEMENTATION_REPORT"
+      - name: Run configured repository check
+        id: checks
+        continue-on-error: true
+        working-directory: consumer
+        env:
+          CHECK_COMMAND: ${{ inputs.check_command }}
+          CHECK_REPORT: ${{ runner.temp }}/check-report.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ -z "$CHECK_COMMAND" ]; then
+            echo "No separate check command configured; see Implementer report." | tee "$CHECK_REPORT"
+          else
+            bash -lc "$CHECK_COMMAND" 2>&1 | tee "$CHECK_REPORT"
+          fi
+      - name: Commit useful work and create transfer bundle
+        id: bundle
+        working-directory: consumer
+        env:
+          PI_OUTCOME: ${{ steps.pi.outcome }}
+          CHECK_OUTCOME: ${{ steps.checks.outcome }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          ARTIFACT_DIR: ${{ runner.temp }}/implementation-artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "Implementer produced no useful repository changes" >&2
+            exit 1
+          fi
+          git config user.name "standardization-agent[bot]"
+          git config user.email "standardization-agent[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "agent: implement issue #${{ inputs.issue_number }}"
+          mkdir -p "$ARTIFACT_DIR"
+          git bundle create "$ARTIFACT_DIR/work.bundle" "$BRANCH_NAME"
+          cp "${{ runner.temp }}/implementation-report.txt" "$ARTIFACT_DIR/implementation-report.txt" 2>/dev/null || true
+          cp "${{ runner.temp }}/check-report.txt" "$ARTIFACT_DIR/check-report.txt" 2>/dev/null || true
+          if [ "$PI_OUTCOME" = "success" ] && [ "$CHECK_OUTCOME" = "success" ]; then outcome=success; else outcome=blocked; fi
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+      - name: Upload credential-free implementation bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-implementation-${{ inputs.issue_number }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/implementation-artifact
+          retention-days: 30
+      - name: Assign fatal failure state
+        if: ${{ failure() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: node agent-harness/harness/scripts/github-state.mjs fail --action implement
+
+  publish:
+    needs: implement
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout versioned harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Checkout consumer base
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.implement.outputs.base_branch }}
+          path: consumer
+          persist-credentials: false
+      - name: Download implementation bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: agent-implementation-${{ inputs.issue_number }}-${{ github.run_id }}
+          path: implementation-artifact
+      - name: Restore agent branch
+        working-directory: consumer
+        env:
+          BRANCH_NAME: ${{ needs.implement.outputs.branch }}
+        run: git fetch ../implementation-artifact/work.bundle "$BRANCH_NAME:$BRANCH_NAME" && git switch "$BRANCH_NAME"
+      - name: Mint repository-scoped GitHub App token via Infisical OIDC
+        id: app
+        env:
+          INFISICAL_BASE_URL: ${{ inputs.infisical_base_url }}
+          INFISICAL_OIDC_AUDIENCE: ${{ inputs.infisical_oidc_audience }}
+          INFISICAL_IDENTITY_ID: ${{ inputs.infisical_identity_id }}
+          INFISICAL_PROJECT_ID: ${{ inputs.infisical_project_id }}
+          INFISICAL_ENVIRONMENT: ${{ inputs.infisical_environment }}
+          INFISICAL_SECRET_PATH: ${{ inputs.infisical_secret_path }}
+          INFISICAL_APP_PRIVATE_KEY_SECRET: ${{ inputs.infisical_app_private_key_secret }}
+          GITHUB_APP_ID: ${{ inputs.github_app_id }}
+        run: node agent-harness/harness/scripts/mint-app-token.mjs
+      - name: Push agent branch
+        working-directory: consumer
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.app.outputs.token }}
+          BRANCH_NAME: ${{ needs.implement.outputs.branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="$RUNNER_TEMP/github-app-askpass.sh"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GITHUB_APP_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git push "https://github.com/${GITHUB_REPOSITORY}.git" "$BRANCH_NAME"
+      - name: Open draft PR with handoff
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.app.outputs.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          BRANCH_NAME: ${{ needs.implement.outputs.branch }}
+          BASE_BRANCH: ${{ needs.implement.outputs.base_branch }}
+          IMPLEMENTATION_OUTCOME: ${{ needs.implement.outputs.outcome }}
+          IMPLEMENTATION_REPORT: ${{ github.workspace }}/implementation-artifact/implementation-report.txt
+          CHECK_REPORT: ${{ github.workspace }}/implementation-artifact/check-report.txt
+          HARNESS_SHA: ${{ needs.implement.outputs.harness_sha }}
+          MODEL: ${{ inputs.model }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node agent-harness/harness/scripts/publish-draft.mjs
+      - name: Complete implementation state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: node agent-harness/harness/scripts/github-state.mjs finish --action implement --outcome "${{ needs.implement.outputs.outcome }}"
+      - name: Revoke App token
+        if: ${{ always() && steps.app.outputs.token != '' }}
+        env:
+          GITHUB_APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          curl --fail --silent --show-error --request DELETE \
+            --header "Authorization: Bearer $GITHUB_APP_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/installation/token
+      - name: Assign publication failure state
+        if: ${{ failure() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: node agent-harness/harness/scripts/github-state.mjs fail --action implement --branch "${{ needs.implement.outputs.branch }}"
+
+  finalize-failure:
+    needs: [implement, publish]
+    if: ${{ always() && (needs.implement.result != 'success' || needs.publish.result != 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: caesariodito/.standardization
+          ref: v2
+          path: agent-harness
+          persist-credentials: false
+      - name: Recover stranded implementation state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+        run: node agent-harness/harness/scripts/github-state.mjs fail --action implement --branch "${{ needs.implement.outputs.branch }}"

@@ -1,0 +1,16 @@
+{
+  "name": "@caesariodito/engineering-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2"
+  },
+  "scripts": {
+    "test": "node --test",
+    "validate-plan": "node scripts/validate-plan.mjs",
+    "render-plan": "node scripts/render-plan.mjs",
+    "state": "node scripts/github-state.mjs"
+  }
+}

@@ -1,0 +1,23 @@
+name: Agent plan
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  plan:
+    if: ${{ contains(fromJSON('["agent-trigger:plan","agent-trigger:replan","agent-trigger:approve"]'), github.event.label.name) }}
+    uses: caesariodito/.standardization/.github/workflows/reusable-agent-plan.yml@v2
+    with:
+      issue_number: ${{ github.event.issue.number }}
+      actor: ${{ github.actor }}
+      action: ${{ github.event.label.name == 'agent-trigger:plan' && 'plan' || github.event.label.name == 'agent-trigger:replan' && 'replan' || 'approve' }}
+      runner_label: ${{ vars.AI_PLANNER_RUNNER_LABEL }}
+      router_base_url: ${{ vars.NINE_ROUTER_BASE_URL }}
+      model: ${{ vars.AI_PLANNER_MODEL || 'engineering-planner' }}
+      timeout_minutes: ${{ fromJSON(vars.AI_PLANNER_TIMEOUT_MINUTES || '15') }}
+    secrets: inherit

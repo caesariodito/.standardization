@@ -22,6 +22,34 @@ uses: caesariodito/.standardization/.github/workflows/<workflow-file>@v1
 
 Use `@v1` for stable major updates. Pin to a full commit SHA when strict reproducibility is required.
 
+## Engineering agent harness pilot (`@v2` only)
+
+The agent harness is a one-repository pilot and is not installed by the
+sync-bot. Copy these files manually:
+
+```text
+templates/workflows/agent-plan.yml      -> .github/workflows/agent-plan.yml
+templates/workflows/agent-implement.yml -> .github/workflows/agent-implement.yml
+```
+
+Create all trigger/state labels and configure the ephemeral runner, 9Router,
+Infisical OIDC, and GitHub App prerequisites in `harness/README.md`. Required
+repository/organization variables include `AI_PLANNER_RUNNER_LABEL`,
+`AI_IMPLEMENTER_RUNNER_LABEL`, `NINE_ROUTER_BASE_URL`, `AI_GITHUB_APP_ID`,
+`AI_INFISICAL_IDENTITY_ID`, `AI_INFISICAL_PROJECT_ID`,
+`AI_INFISICAL_ENVIRONMENT`, and `AI_INFISICAL_APP_PRIVATE_KEY_SECRET`; provide `NINE_ROUTER_API_KEY` as a secret.
+
+The caller templates grant Planner `contents: read, issues: write`. Implementer
+also grants `id-token: write`, used only by the isolated publication job after
+approval/drift checks and model execution. Do not add deployment/environment
+permissions. Treat `AI_IMPLEMENTER_CHECK_COMMAND` as trusted workflow
+configuration, never issue content.
+
+The harness uses mutable `@v2` for fast pilot updates and records its resolved
+SHA. Protect tag movement and retain the prior SHA for rollback, or replace
+`@v2` with a full SHA when strict reproducibility is required. Complete the
+3–5 issue scorecard before wider adoption.
+
 ## Available reusable workflows
 
 ```text
