@@ -21,4 +21,6 @@ jobs:
       timeout_minutes: ${{ fromJSON(vars.AI_IMPLEMENTER_TIMEOUT_MINUTES || '60') }}
       check_command: ${{ vars.AI_IMPLEMENTER_CHECK_COMMAND || '' }}
       github_app_id: ${{ vars.AI_GITHUB_APP_ID }}
-    secrets: inherit
+    secrets:
+      NINE_ROUTER_API_KEY: ${{ secrets.NINE_ROUTER_API_KEY }}
+      GH_PRIVATE_APP_KEY: ${{ secrets.GH_PRIVATE_APP_KEY }}

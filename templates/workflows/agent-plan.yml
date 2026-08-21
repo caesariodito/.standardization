@@ -20,4 +20,5 @@ jobs:
       router_base_url: ${{ vars.NINE_ROUTER_BASE_URL }}
       model: ${{ vars.AI_PLANNER_MODEL || 'engineering-planner' }}
       timeout_minutes: ${{ fromJSON(vars.AI_PLANNER_TIMEOUT_MINUTES || '15') }}
-    secrets: inherit
+    secrets:
+      NINE_ROUTER_API_KEY: ${{ secrets.NINE_ROUTER_API_KEY }}
