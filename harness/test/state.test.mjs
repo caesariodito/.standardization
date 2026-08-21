@@ -20,6 +20,8 @@ test("rejects unauthorized, consumed, stale, and mismatched implementation trigg
   assert.throws(() => evaluateStart({ action: "implement", labels, permission: "write", planMarker: plan, approvalMarker: { ...approval, planSha: "old" } }), /not the approved plan/);
   assert.throws(() => evaluateStart({ action: "implement", labels, permission: "write", planMarker: plan, approvalMarker: approval, currentSha: "r2", changedFiles: ["src/a.js"] }), /stale/);
   assert.equal(evaluateStart({ action: "implement", labels, permission: "write", planMarker: plan, approvalMarker: approval, currentSha: "r2", changedFiles: ["README.md"] }).nextState, "agent-state:implementing");
+  assert.equal(evaluateStart({ action: "implement", labels: ["agent-state:implementation-failed", "agent-trigger:implement"], permission: "write", planMarker: plan, approvalMarker: approval }).nextState, "agent-state:implementing");
+  assert.throws(() => evaluateStart({ action: "implement", labels: ["agent-state:implementation-blocked", "agent-trigger:implement"], permission: "write", planMarker: plan, approvalMarker: approval }), /illegal source/);
 });
 
 test("approval and state replacement keep exactly one lifecycle state", () => {

@@ -41,7 +41,7 @@ Create these bot-owned state labels:
 - `agent-state:plan-failed`
 - `agent-state:implementation-failed`
 
-Initial planning also requires `intake-state:needs-review`. Exactly one `agent-state:*` is retained. Triggering actors require `write`, `maintain`, or `admin` permission.
+Initial planning also requires `intake-state:needs-review`. Exactly one `agent-state:*` is retained. Triggering actors require `write`, `maintain`, or `admin` permission. After `agent-state:implementation-failed`, a human may reapply `agent-trigger:implement`; the harness revalidates the approved plan and repository drift before retrying.
 
 ## Install in one pilot repository
 

@@ -171,18 +171,21 @@ jobs:
           PI_OUTCOME: ${{ steps.pi.outcome }}
           CHECK_OUTCOME: ${{ steps.checks.outcome }}
           BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          BASE_SHA: ${{ steps.context.outputs.default_sha }}
           ARTIFACT_DIR: ${{ runner.temp }}/implementation-artifact
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+          if git diff --quiet "$BASE_SHA" -- && [ -z "$(git status --porcelain)" ]; then
             echo "Implementer produced no useful repository changes" >&2
             exit 1
           fi
           git config user.name "standardization-agent[bot]"
           git config user.email "standardization-agent[bot]@users.noreply.github.com"
           git add --all
-          git commit -m "agent: implement issue #${{ inputs.issue_number }}"
+          if ! git diff --cached --quiet; then
+            git commit -m "agent: implement issue #${{ inputs.issue_number }}"
+          fi
           mkdir -p "$ARTIFACT_DIR"
           git bundle create "$ARTIFACT_DIR/work.bundle" "$BRANCH_NAME"
           cp "${{ runner.temp }}/implementation-report.txt" "$ARTIFACT_DIR/implementation-report.txt" 2>/dev/null || true

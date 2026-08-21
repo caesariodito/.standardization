@@ -9,7 +9,7 @@ const activeState = { plan: "agent-state:planning", replan: "agent-state:plannin
 const legalSource = {
   plan: (labels) => labels.includes("intake-state:needs-review") && !labels.some((x) => x.startsWith(STATE_PREFIX)),
   replan: (labels) => ["agent-state:needs-review", "agent-state:approved"].some((x) => labels.includes(x)),
-  implement: (labels) => labels.includes("agent-state:approved")
+  implement: (labels) => ["agent-state:approved", "agent-state:implementation-failed"].some((x) => labels.includes(x))
 };
 
 export function evaluateStart({ action, labels, permission, planMarker, approvalMarker, currentSha, changedFiles = [] }) {
