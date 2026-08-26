@@ -48,6 +48,7 @@ standardizing projects across local repositories.
 ├── templates/
 │   ├── agents/                        # the vendored AGENTS.md template (v2)
 │   ├── agent-work/                    # manual sub-agent coordination template
+│   ├── issue-templates/               # canonical consumer issue forms
 │   └── pi-agent/                      # reference snapshot of ~/.pi/agent/AGENTS.md
 └── tools/
     └── agents-doctor/                 # Go CLI that validates a repo against the standard
@@ -114,6 +115,14 @@ and 3–5 issue scorecard are in `harness/README.md`.
 These callers deliberately use mutable `@v2` for fast pilot fixes. Every run
 records the resolved harness SHA, and maintainers must retain the previous SHA
 for rollback. Pin a full SHA instead when strict reproducibility is required.
+
+### Engineering ticket intake contract
+
+The canonical engineering ticket issue form is
+`templates/issue-templates/engineering-ticket.yml`. During the pilot, copy it
+unchanged to each participating consumer at
+`.github/ISSUE_TEMPLATE/engineering-ticket.yml`. The sync-bot does not
+distribute this form yet; verify deployed copies remain byte-identical.
 
 Go workflows support optional private modules through `private_modules_pattern`
 and `GH_PRIVATE_MODULES_TOKEN`. Consuming repositories provide the secret;
